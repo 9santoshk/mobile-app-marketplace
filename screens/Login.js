@@ -1,4 +1,4 @@
-import * as React from 'react';
+import React, { useState, useEffect } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native';
@@ -9,14 +9,30 @@ import 'firebase/auth';
 import 'firebase/firestore';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { getAuth, onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBLpQCNf8ownlLKmQFU9UKtO4RI2upxBR0",
+    authDomain: "nft-android-app-386020.firebaseapp.com",
+    projectId: "nft-android-app-386020",
+    storageBucket: "nft-android-app-386020.appspot.com",
+    messagingSenderId: "946086013420",
+    appId: "1:946086013420:web:2ad4a9ee61fe50444ef8c9",
+    measurementId: "G-3WVWXCF14Q"
+};
+
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const auth = getAuth();
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function Login() {
-    const [isLoading, setIsLoading] = React.useState(false);
-
-    const [accessToken, setAccessToken] = React.useState(null);
-    const [user, setUser] = React.useState(null);
+    // const [isLoading, setIsLoading] = React.useState(false);
+    // const [accessToken, setAccessToken] = React.useState(null);
+    const [user, setUser] = useState(null);
 
 
     // const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
@@ -26,99 +42,40 @@ export default function Login() {
         androidclientId: "946086013420-50l2fkelgr79e55d5bq4nuen9h1ek73m.apps.googleusercontent.com",
         scopes: ['profile', 'email'],
     });
+    const auth = getAuth(app);
 
-    React.useEffect(() => {
-        if (response?.type === "success") {
-            // console.log('response', response)
-            setAccessToken(response.authentication.accessToken);
-            fetchUserInfo();
-        }
-    }, [response])
-
-    React.useEffect(() => {
-        if (accessToken) {
-            fetchUserInfo();
-        }
-    }, [accessToken])
-
-    async function fetchUserInfo() {
-        let response = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-            headers: { Authorization: `Bearer ${accessToken}` }
+    useEffect(() => {
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                setUser(user);
+                navigation.navigate('Home');
+            }
         });
-        const userInfo = await response.json();
-        setUser(userInfo);
+    }, []);
 
-        // Check if user already exists in Firebase
-        const usersRef = firebase.firestore().collection('users');
-        const existingUser = await usersRef.doc(userInfo.email).get();
 
-        if (!existingUser.exists) {
-            // Create a new user in Firebase
-            const newUser = {
-                name: userInfo.name,
-                email: userInfo.email,
-                photoUrl: userInfo.picture,
-            };
-            await usersRef.doc(userInfo.email).set(newUser);
-        }
-    }
-
-    const signInWithGoogleAsync = async () => {
+    const handleLogin = async () => {
         try {
-            setIsLoading(true);
             const result = await promptAsync();
 
-            // const result = await Google.logInAsync({
-            //     clientId: "946086013420-9msni00t6ghhf1gsr078ipq69llsbv7t.apps.googleusercontent.com",
-            //     iosclientId: "946086013420-q1phm0nb9196d1m1f6qbu7qmjgmlng28.apps.googleusercontent.com",
-            //     androidClientId: "946086013420-50l2fkelgr79e55d5bq4nuen9h1ek73m.apps.googleusercontent.com",
-            //     scopes: ['profile', 'email'],
-            // });
-
             if (result.type === 'success') {
-                // Build Firebase credential with the Google ID token
-                const credential = firebase.auth.GoogleAuthProvider.credential(result.idToken);
-
-                // Sign in with Firebase
-                await firebase.auth().signInWithCredential(credential);
-
-                // Fetch user data and create user document in Firebase
-                const user = firebase.auth().currentUser;
-                const usersRef = firebase.firestore().collection('users');
-                const userDoc = await usersRef.doc(user.email).get();
-                if (userDoc.exists) {
-                    setUser(userDoc.data());
-                } else {
-                    const newUser = {
-                        name: user.displayName,
-                        email: user.email,
-                        photoUrl: user.photoURL,
-                    };
-                    await usersRef.doc(user.email).set(newUser);
-                    setUser(newUser);
-                }
+                const { idToken, accessToken } = result;
+                const credential = firebase.auth.GoogleAuthProvider.credential(idToken, accessToken);
+                const userCredential = await firebase.auth().signInWithCredential(credential);
+                const { uid, displayName, email, photoURL } = userCredential.user;
+                const userDoc = firebase.firestore().collection('users').doc(uid);
+                await userDoc.set({
+                    displayName,
+                    email,
+                    photoURL,
+                });
             } else {
-                console.log('Google sign-in failed');
+                Alert.alert('Error', 'Google sign-in was cancelled or failed');
             }
-        } catch (e) {
-            console.log(e);
-        } finally {
-            setIsLoading(false);
+        } catch (error) {
+            Alert.alert('Error', error.message);
         }
     };
-
-
-    const ShowUserInfo = () => {
-        if (user) {
-            return (
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 35, fontWeight: 'bold', marginBottom: 20 }}>Welcome</Text>
-                    <Image source={{ uri: user.picture }} style={{ width: 100, height: 100, borderRadius: 50 }} />
-                    <Text style={{ fontSize: 20, fontWeight: 'bold' }}>{user.name}</Text>
-                </View>
-            )
-        }
-    }
 
     return (
         <View style={styles.container}>
@@ -130,7 +87,7 @@ export default function Login() {
                     <TouchableOpacity
                         disabled={!request}
                         onPress={() => {
-                            signInWithGoogleAsync();
+                            handleLogin();
                             // promptAsync();
                         }}
                     >
